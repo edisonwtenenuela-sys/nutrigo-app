@@ -1,0 +1,76 @@
+name: emprendedor
+description: "Aplicación móvil académica NutriGo para alimentación saludable."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  provider: ^6.1.5
+  firebase_core: ^4.10.0
+  firebase_auth: ^6.5.2
+  cloud_firestore: ^6.5.0
+  cloud_functions: ^6.3.2
+  firebase_storage: ^13.4.2
+  firebase_messaging: ^16.3.0
+  flutter_stripe: ^12.6.0
+  google_maps_flutter: ^2.13.1
+  geolocator: ^14.0.2
+  geocoding: ^4.0.0
+  fl_chart: ^1.2.0
+  excel: ^4.0.0
+  pdf: ^3.10.0
+  printing: ^5.11.0
+  firebase_app_check: ^0.4.4+2
+  google_sign_in: ^6.3.0
+  image_picker: ^1.2.0
+  intl: ^0.20.2
+  path_provider: ^2.1.0
+  open_filex: ^4.4.0
+  logging: ^1.2.0
+  collection: ^1.18.0
+  url_launcher: ^6.2.2
+  font_awesome_flutter: ^11.0.0
+  flutter_local_notifications: ^18.0.1
+  flutter_screenutil: ^5.9.3
+  cached_network_image: ^3.4.1
+  flutter_image_compress: ^2.4.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/icons/
+    - assets/branding/
+
+  fonts:
+    - family: Poppins
+      fonts:
+        - asset: assets/fonts/Poppins-black.ttf
+        - asset: assets/fonts/Poppins-BlackItalic.ttf
+        - asset: assets/fonts/Poppins-Bold.ttf
+        - asset: assets/fonts/Poppins-BoldItalic.ttf
+        - asset: assets/fonts/Poppins-ExtraBold.ttf
+        - asset: assets/fonts/Poppins-ExtraBoldItalic.ttf
+        - asset: assets/fonts/Poppins-ExtraLight.ttf
+        - asset: assets/fonts/Poppins-ExtraLightItalic.ttf
+        - asset: assets/fonts/Poppins-Italic.ttf
+        - asset: assets/fonts/Poppins-Light.ttf
+        - asset: assets/fonts/Poppins-LightItalic.ttf
+        - asset: assets/fonts/Poppins-Medium.ttf
+        - asset: assets/fonts/Poppins-MediumItalic.ttf
+        - asset: assets/fonts/Poppins-Regular.ttf
+        - asset: assets/fonts/Poppins-SemiBold.ttf
+        - asset: assets/fonts/Poppins-SemiBoldItalic.ttf
+        - asset: assets/fonts/Poppins-Thin.ttf
+        - asset: assets/fonts/Poppins-ThinItalic.ttf

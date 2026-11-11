@@ -1,0 +1,562 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function userDocExists() {
+      return isSignedIn() &&
+          exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function userRole() {
+      return userDocExists()
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+        : '';
+    }
+
+    function isNutritionist() {
+      return isSignedIn() && userRole() == 'nutricionista';
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+          (
+            userRole() == 'admin' ||
+              userRole() == 'ADM'
+          );
+    }
+
+    function isNonAdminRole(role) {
+      return role != 'admin' && role != 'ADM';
+    }
+
+    function isVerifiedEntrepreneur() {
+      return isSignedIn() &&
+          userRole() == 'emprendedor' &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isVerified == true;
+    }
+
+    function isAllowedInitialUserState() {
+      return (
+          request.resource.data.role == 'cliente' &&
+            request.resource.data.requestedRole == 'cliente' &&
+            request.resource.data.isVerified == true &&
+            request.resource.data.verificationStatus == 'approved'
+        ) ||
+        (
+          request.resource.data.role == 'emprendedor' &&
+            request.resource.data.requestedRole == 'emprendedor' &&
+            request.resource.data.isVerified == false &&
+            request.resource.data.verificationStatus in ['not_submitted', 'pending']
+        ) ||
+        (
+          request.resource.data.role == 'pending_nutritionist' &&
+            request.resource.data.requestedRole == 'nutricionista' &&
+            request.resource.data.isVerified == false &&
+            request.resource.data.verificationStatus in ['not_submitted', 'pending']
+        );
+    }
+
+    function isSafeOwnerUserUpdate() {
+      return request.resource.data.role == resource.data.role &&
+          isNonAdminRole(resource.data.role) &&
+          !request.resource.data
+            .diff(resource.data)
+            .affectedKeys()
+            .hasAny([
+              'role',
+              'requestedRole',
+              'isVerified',
+              'verificationStatus',
+              'verificationMessage',
+              'isAdmin',
+              'admin'
+            ]);
+    }
+
+    function isOwnerVerificationSubmissionUpdate() {
+      return isNonAdminRole(request.resource.data.role) &&
+          request.resource.data.isVerified == false &&
+          request.resource.data.verificationStatus == 'pending' &&
+          request.resource.data.verificationMessage == '' &&
+          resource.data.verificationStatus in ['not_submitted', 'pending', 'rejected'] &&
+          (
+            (
+              request.resource.data.role == 'emprendedor' &&
+                request.resource.data.requestedRole == 'emprendedor'
+            ) ||
+            (
+              request.resource.data.role == 'pending_nutritionist' &&
+                request.resource.data.requestedRole == 'nutricionista'
+            )
+          );
+    }
+
+    function preservesClientProtectedFields() {
+      return request.resource.data.userId == resource.data.userId &&
+          request.resource.data.role == resource.data.role &&
+          request.resource.data.isVerified == resource.data.isVerified;
+    }
+
+    function preservesBusinessProtectedFields() {
+      return request.resource.data.userId == resource.data.userId &&
+          request.resource.data.role == resource.data.role &&
+          request.resource.data.rating == resource.data.rating &&
+          request.resource.data.totalReviews == resource.data.totalReviews;
+    }
+
+    function preservesNutritionistProtectedFields() {
+      return request.resource.data.userId == resource.data.userId &&
+          request.resource.data.role == resource.data.role &&
+          request.resource.data.isVerified == resource.data.isVerified &&
+          request.resource.data.reviewsCount == resource.data.reviewsCount &&
+          request.resource.data.reviewsSum == resource.data.reviewsSum;
+    }
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create:
+      if isAdmin() ||
+          (
+            isOwner(userId) &&
+              request.resource.data.role is string &&
+              isNonAdminRole(request.resource.data.role) &&
+              isAllowedInitialUserState()
+          );
+
+      allow update:
+      if isAdmin() ||
+          (
+            isOwner(userId) &&
+              (
+                isSafeOwnerUserUpdate() ||
+                  isOwnerVerificationSubmissionUpdate()
+              )
+          );
+
+      allow delete: if isAdmin();
+
+      match /social_media/{documentId} {
+        allow read: if true;
+        allow write: if isOwner(userId) || isAdmin();
+      }
+
+      match /payment_methods/{documentId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+    }
+
+    match /business_profiles/{userId} {
+      allow read: if true;
+
+      allow create: if isOwner(userId) || isAdmin();
+      allow update:
+      if (isOwner(userId) && preservesBusinessProtectedFields()) ||
+          isAdmin() ||
+          (
+            isSignedIn() &&
+              request.resource.data
+              .diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                'rating',
+                'totalReviews',
+                'updatedAt'
+              ])
+          );
+      allow delete: if isAdmin();
+    }
+
+    match /clients/{userId} {
+      allow read:
+      if isOwner(userId) ||
+          isNutritionist() ||
+          isAdmin();
+
+      allow create: if isOwner(userId) || isAdmin();
+      allow update: if (isOwner(userId) && preservesClientProtectedFields()) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /nutritionists/{userId} {
+      allow read: if true;
+
+      allow create: if isOwner(userId) || isAdmin();
+      allow update:
+      if (isOwner(userId) && preservesNutritionistProtectedFields()) ||
+          isAdmin() ||
+          (
+            isSignedIn() &&
+              request.resource.data
+              .diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                'reviewsCount',
+                'reviewsSum',
+                'updatedAt'
+              ])
+          );
+      allow delete: if isAdmin();
+    }
+
+    match /nutritionist_availability/{nutritionistId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isOwner(nutritionistId) || isAdmin();
+    }
+
+    match /products/{productId} {
+      allow read:
+      if isSignedIn() &&
+          (
+            resource.data.userId == request.auth.uid ||
+              isNutritionist() ||
+              isAdmin() ||
+              (
+                resource.data.status == 'available' &&
+                  resource.data.validationStatus == 'approved'
+              )
+          );
+
+      allow create:
+      if isVerifiedEntrepreneur() &&
+          request.resource.data.userId == request.auth.uid;
+
+      allow update:
+      if isSignedIn() &&
+          (
+            isAdmin() ||
+              (
+                isNutritionist() &&
+                  request.resource.data
+                  .diff(resource.data)
+                  .affectedKeys()
+                  .hasOnly([
+                    'validationStatus',
+                    'validatedByNutritionistId',
+                    'validatedByNutritionistName',
+                    'validatedAt',
+                    'validationComment',
+                    'status',
+                    'updatedAt'
+                  ])
+              ) ||
+              (
+                resource.data.userId == request.auth.uid &&
+                  isVerifiedEntrepreneur()
+              )
+          );
+
+      allow delete:
+      if isSignedIn() &&
+          (
+            isAdmin() ||
+              (
+                resource.data.userId == request.auth.uid &&
+                  isVerifiedEntrepreneur()
+              )
+          );
+    }
+
+    match /orders/{orderId} {
+      allow read:
+      if isSignedIn() &&
+          (
+            resource.data.userId == request.auth.uid ||
+              resource.data.businessUserId == request.auth.uid ||
+              isAdmin()
+          );
+
+      allow create:
+      if isSignedIn() &&
+          request.resource.data.userId == request.auth.uid &&
+          request.resource.data.keys().hasAll([
+            'userId',
+            'businessUserId',
+            'items',
+            'totalPrice',
+            'status',
+            'paymentMethod',
+            'paymentStatus',
+            'shippingAddress',
+            'customerInfo',
+            'createdAt'
+          ]);
+
+      allow update:
+      if isSignedIn() &&
+          (
+            isAdmin() ||
+              (
+                resource.data.businessUserId == request.auth.uid &&
+                  request.resource.data
+                  .diff(resource.data)
+                  .affectedKeys()
+                  .hasOnly([
+                    'status',
+                    'updatedAt',
+                    'deliveredAt',
+                    'paymentStatus'
+                  ])
+              ) ||
+              (
+                resource.data.userId == request.auth.uid &&
+                  request.resource.data
+                  .diff(resource.data)
+                  .affectedKeys()
+                  .hasOnly([
+                    'paymentStatus',
+                    'paymentIntentId',
+                    'updatedAt'
+                  ])
+              )
+          );
+
+      allow delete:
+      if isAdmin();
+    }
+
+    match /order_counters/{businessUserId} {
+      allow read:
+      if isSignedIn() &&
+          (
+            request.auth.uid == businessUserId ||
+              isAdmin()
+          );
+      allow create, update:
+      if isSignedIn() &&
+          (
+            request.auth.uid == businessUserId ||
+              isAdmin()
+          );
+      allow delete: if isAdmin();
+    }
+
+    match /notification_requests/{requestId} {
+      allow create:
+      if isSignedIn() &&
+          request.resource.data.targetUserId is string &&
+          request.resource.data.targetUserId == request.auth.uid;
+      allow read, update, delete: if isAdmin();
+    }
+
+    match /carts/{userId}/items/{itemId} {
+      allow read, write:
+      if isSignedIn() &&
+          request.auth.uid == userId;
+    }
+
+    match /promotions/{promotionId} {
+      allow read: if true;
+
+      allow create:
+      if isVerifiedEntrepreneur() &&
+          request.resource.data.userId == request.auth.uid;
+
+      allow update, delete:
+      if isSignedIn() &&
+          (
+            isAdmin() ||
+              (
+                resource.data.userId == request.auth.uid &&
+                  isVerifiedEntrepreneur()
+              )
+          );
+
+      match /coupons/{couponId} {
+        allow read: if true;
+
+        allow create:
+        if isVerifiedEntrepreneur() &&
+            get(/databases/$(database)/documents/promotions/$(promotionId)).data.userId == request.auth.uid &&
+            request.resource.data.userId == request.auth.uid &&
+            request.resource.data.promotionId == promotionId;
+
+        allow update:
+        if isAdmin() ||
+            (
+              isVerifiedEntrepreneur() &&
+                get(/databases/$(database)/documents/promotions/$(promotionId)).data.userId == request.auth.uid &&
+                resource.data.userId == request.auth.uid &&
+                request.resource.data.userId == resource.data.userId &&
+                request.resource.data.promotionId == resource.data.promotionId
+            );
+
+        allow delete:
+        if isAdmin() ||
+            (
+              isVerifiedEntrepreneur() &&
+                get(/databases/$(database)/documents/promotions/$(promotionId)).data.userId == request.auth.uid &&
+                resource.data.userId == request.auth.uid
+            );
+      }
+    }
+
+    match /business_reviews/{reviewId} {
+      allow read: if true;
+
+      allow create:
+      if isSignedIn() &&
+          request.resource.data.clientUserId == request.auth.uid &&
+          request.resource.data.rating is number &&
+          request.resource.data.rating >= 1 &&
+          request.resource.data.rating <= 5;
+
+      allow update, delete: if false;
+    }
+
+    match /nutritionist_reviews/{reviewId} {
+      allow read:
+      if isSignedIn();
+
+      allow create:
+      if isSignedIn() &&
+          request.resource.data.clientUserId == request.auth.uid &&
+          request.resource.data.appointmentId == reviewId &&
+          exists(/databases/$(database)/documents/appointments/$(reviewId)) &&
+          get(/databases/$(database)/documents/appointments/$(reviewId)).data.clientUserId == request.auth.uid &&
+          get(/databases/$(database)/documents/appointments/$(reviewId)).data.nutritionistUserId == request.resource.data.nutritionistUserId &&
+          get(/databases/$(database)/documents/appointments/$(reviewId)).data.status == 'completed' &&
+          get(/databases/$(database)/documents/appointments/$(reviewId)).data.isReviewed != true &&
+          request.resource.data.rating is number &&
+          request.resource.data.rating >= 1 &&
+          request.resource.data.rating <= 5;
+
+      allow update, delete:
+      if false;
+    }
+
+    match /appointments/{appointmentId} {
+      allow read:
+      if isSignedIn() &&
+          (
+            resource.data.clientUserId == request.auth.uid ||
+              resource.data.nutritionistUserId == request.auth.uid ||
+              isAdmin()
+          );
+
+      allow create:
+      if isSignedIn() &&
+          request.resource.data.clientUserId == request.auth.uid;
+
+      allow update:
+      if isSignedIn() &&
+          (
+            isAdmin() ||
+              (
+                (
+                  resource.data.clientUserId == request.auth.uid ||
+                    resource.data.nutritionistUserId == request.auth.uid
+                ) &&
+                  request.resource.data.clientUserId == resource.data.clientUserId &&
+                  request.resource.data.nutritionistUserId == resource.data.nutritionistUserId &&
+                  request.resource.data.createdAt == resource.data.createdAt
+              )
+          );
+
+      allow delete:
+      if isSignedIn() &&
+          (
+            resource.data.clientUserId == request.auth.uid ||
+              isAdmin()
+          );
+    }
+
+    match /appointment_slots/{slotId} {
+      allow read: if isSignedIn();
+
+      allow create:
+      if isSignedIn() &&
+          request.resource.data.clientUserId == request.auth.uid;
+
+      allow update:
+      if isSignedIn() &&
+          (
+            isAdmin() ||
+              resource.data.clientUserId == request.auth.uid ||
+              resource.data.nutritionistUserId == request.auth.uid
+          ) &&
+          request.resource.data.clientUserId == resource.data.clientUserId &&
+          request.resource.data.nutritionistUserId == resource.data.nutritionistUserId;
+
+      allow delete: if isAdmin();
+    }
+
+    match /statistics/{userId} {
+      allow read, write:
+      if isOwner(userId) || isAdmin();
+    }
+
+    match /entrepreneur_verifications/{requestId} {
+      function isOwnPendingEntrepreneurRequest() {
+        return isSignedIn() &&
+            requestId == request.auth.uid &&
+            request.resource.data.entrepreneurId == request.auth.uid &&
+            request.resource.data.userId == request.auth.uid &&
+            request.resource.data.status == 'pending';
+      }
+
+      allow read:
+      if isAdmin() ||
+          (
+            isSignedIn() &&
+              resource.data.entrepreneurId == request.auth.uid
+          );
+
+      allow create:
+      if isOwnPendingEntrepreneurRequest();
+
+      allow update:
+      if isAdmin() ||
+          (
+            isOwnPendingEntrepreneurRequest() &&
+              resource.data.entrepreneurId == request.auth.uid &&
+              resource.data.status in ['pending', 'rejected']
+          );
+
+      allow delete:
+      if isAdmin();
+    }
+
+    match /nutritionist_verifications/{requestId} {
+      function isOwnPendingNutritionistRequest() {
+        return isSignedIn() &&
+            requestId == request.auth.uid &&
+            request.resource.data.userId == request.auth.uid &&
+            request.resource.data.status == 'pending';
+      }
+
+      allow read:
+      if isAdmin() ||
+          (
+            isSignedIn() &&
+              resource.data.userId == request.auth.uid
+          );
+
+      allow create:
+      if isOwnPendingNutritionistRequest();
+
+      allow update:
+      if isAdmin() ||
+          (
+            isOwnPendingNutritionistRequest() &&
+              resource.data.userId == request.auth.uid &&
+              resource.data.status in ['pending', 'rejected']
+          );
+
+      allow delete:
+      if isAdmin();
+    }
+
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}
+

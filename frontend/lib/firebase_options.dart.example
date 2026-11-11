@@ -1,0 +1,17 @@
+// Example only. Generate the real file with `flutterfire configure`.
+// Never commit credentials or identifiers from a private Firebase project.
+
+import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
+
+class DefaultFirebaseOptions {
+  static const FirebaseOptions android = FirebaseOptions(
+    apiKey: 'YOUR_FIREBASE_API_KEY',
+    appId: 'YOUR_FIREBASE_APP_ID',
+    messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
+    projectId: 'YOUR_FIREBASE_PROJECT_ID',
+    storageBucket: 'YOUR_STORAGE_BUCKET',
+  );
+
+  static FirebaseOptions get currentPlatform => android;
+}
+

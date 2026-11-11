@@ -1,0 +1,43 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isImageUpload() {
+      return request.resource != null &&
+        request.resource.size < 5 * 1024 * 1024 &&
+        request.resource.contentType.matches('image/.*');
+    }
+
+    match /products/{userId}/{fileName} {
+      allow read: if isSignedIn();
+      allow create, update: if isOwner(userId) && isImageUpload();
+      allow delete: if isOwner(userId);
+    }
+
+    match /profile_images/{userId}/{fileName} {
+      allow read: if isSignedIn();
+      allow create, update: if isOwner(userId) && isImageUpload();
+      allow delete: if isOwner(userId);
+    }
+
+    match /clients/{userId}/profile/{fileName} {
+      allow read: if isSignedIn();
+      allow create, update: if isOwner(userId) && isImageUpload();
+      allow delete: if isOwner(userId);
+    }
+
+    match /nutritionists/{userId}/profile/{fileName} {
+      allow read: if isSignedIn();
+      allow create, update: if isOwner(userId) && isImageUpload();
+      allow delete: if isOwner(userId);
+    }
+  }
+}

@@ -1,0 +1,14 @@
+﻿
+enum AdminPanelType {
+  pending,
+  history,
+}
+
+
+
+
+
+
+
+
+
